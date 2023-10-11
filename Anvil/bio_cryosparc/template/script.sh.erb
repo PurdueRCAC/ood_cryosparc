@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Change working directory to user's home directory
+LICENSE_FILE_PATH=${HOME}/.cryosparc/license_id
+if [[ ! -d "${HOME}/.cryosparc" ]]; then
+    echo "Cryosparc hidden directory does not exist. Creating it..."
+    mkdir -p "${HOME}/.cryosparc"
+fi
+echo "License is <%= context.license %>"
+echo "<%= context.license %>" > "${HOME}/.cryosparc/license_id"
+
+source /etc/profile.d/modules.sh
+
+# Reset module environment (may require login shell for some HPC clusters)
+module purge && module restore
+
+# Ensure that the user's configured login shell is used
+export SHELL="$(getent passwd $USER | cut -d: -f7)"
+
+#TODO: Add support for CPU only jobs
+#  usegpu="--nogpu"
+#  usegpu="--gpus $CUDA_VISIBLE_DEVICES"
+#
+<%- if context.num_gpus.to_s == "0" -%>
+	usegpu="--nogpu"
+	<%- else -%>
+	usegpu="--gpus $CUDA_VISIBLE_DEVICES"
+<%- end -%>
+sed -i "s@SED_GPU_VARIABLE@$usegpu@g" "$PWD/bin/cryosparc_start"
+
+# Edit the path of the image in the cryosparc_start script
+sed -i -e "s@FINALIMAGE@<%= context.version %>@g" bin/cryosparc_start
+
+# Start up Cryosparc
+${PWD}/bin/cryosparc_start
+
+# Start up desktop
+sed -i -e "s@FINALIMAGE@<%= context.version %>@g" desktops/xfce.sh
+echo "Launching desktop '<%= context.desktop %>'..."
+source "<%= session.staged_root.join("desktops", "#{context.desktop}.sh") %>"
+echo "Desktop '<%= context.desktop %>' ended..."

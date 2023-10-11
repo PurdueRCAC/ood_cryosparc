@@ -1,0 +1,95 @@
+#!/bin/bash
+
+module --force purge 
+
+user_email="cryoadmin@purdue.edu"
+user_name="cryoadmin"
+user_password="cryoadmin"
+user_firstname="cryo"
+user_lastname="admin"
+base_dir=/cryosparc
+CRYOSPARC_MASTER_DIR=/cryosparc/cryosparc_master
+CRYOSPARC_WORKER_DIR=/cryosparc/cryosparc_worker
+ssd_path=/tmp/
+home_license=$HOME/.cryosparc
+scratch_run=$RCAC_SCRATCH/cryosparc_hpc/run
+mkdir -p $scratch_run
+scratch_database=$RCAC_SCRATCH/cryosparc_hpc/cryosparc_database
+mkdir -p $scratch_database
+scratch_cache=$RCAC_SCRATCH/cryosparc_hpc/cryosparc_cache
+mkdir -p $scratch_cache
+cryosparc_image=FINALIMAGE
+
+## Bind host directories
+export SINGULARITY_BINDPATH=$home_license:/cryosparc_license,$scratch_run:/cryosparc/cryosparc_master/run,$scratch_database:/cryosparc_database,$scratch_cache:/cryosparc_cache
+## Remove previous lock files in /tmp
+if ls /tmp/cryosparc-*sock 1> /dev/null 2>&1; then
+    lockfiles=`ls /tmp/cryosparc-*sock`
+    if [[ $lockfiles != *"cannot access"* ]];then
+        for i in $lockfiles
+        do
+            owner=`stat -c %U $i`
+            if [[ $owner == $USER ]]
+            then
+                echo "  Removing file $i"
+                rm $i
+                rm /tmp/mongodb*sock
+            else
+                echo "  There is a $i lockfile left by $owner from a previous session. "
+                echo "  CryoSparc cannot obtain the database socket because this file can not be delete by you. "
+                echo "  Please ask $owner to delete $i on $master_node ."
+                echo "  Unfortunately, I have to quit."
+                exit 1
+            fi
+        done
+    fi
+else
+    echo "  No lock founded in /tmp. "
+fi
+## Remove previous lock files in $scratch_database
+if ls $scratch_database/*.lock 1> /dev/null 2>&1; then
+        lockfiles=`ls $scratch_database/*.lock`
+        if [[ $lockfiles != *"cannot access"* ]];then
+                for i in $lockfiles
+                do
+            echo "  Removing file $i"
+                                rm $i
+        done
+    fi
+else
+    echo "  No lock founded in $scratch_database. "
+fi
+## Start Master
+echo "  Starting the Cryosparc Master on $HOSTNAME. "
+singularity exec --nv $cryosparc_image cryosparcm start 
+# scancel job if cryosparc is already running in another job since it will fail to start
+if [ $? != "0" ]; then
+   echo "=== cryosparcm start failed. Is cryoSPARC currently running in another job?"
+   squeue -u $USER
+   scancel $SLURM_JOBID
+   exit
+fi
+## wait cryosparc to start
+sleep 60
+## remove old workers
+singularity exec --nv $cryosparc_image cryosparcm cli "remove_scheduler_target_node(\"$HOSTNAME\")"
+sleep 5
+## Create the admin user
+singularity exec --nv $cryosparc_image cryosparcm createuser \
+    --email $user_email \
+        --password $user_password \
+        --username $user_name \
+        --firstname $user_firstname \
+        --lastname  $user_lastname
+singularity exec --nv  $cryosparc_image cryosparcm cli "remove_scheduler_lane('default')" 
+
+## Connect worker
+singularity exec --nv $cryosparc_image cryosparcw connect \
+    --worker $(hostname) \
+    --master $(hostname) \
+    --ssdpath $ssd_path \
+    --lane default \
+    SED_GPU_VARIABLE \
+    --newlane
+# display cryosparc environment variables
+singularity exec --nv $cryosparc_image cryosparcm env

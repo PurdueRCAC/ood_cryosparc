@@ -1,0 +1,62 @@
+#!/bin/bash
+base_dir=/cryosparc
+CRYOSPARC_MASTER_DIR=/cryosparc/cryosparc_master
+CRYOSPARC_WORKER_DIR=/cryosparc/cryosparc_worker
+ssd_path=/tmp/
+home_licence=$HOME/cryosparc_hpc/
+scratch_run=$RCAC_SCRATCH/cryosparc_hpc/run
+scratch_database=$RCAC_SCRATCH/cryosparc_hpc/cryosparc_database
+scratch_cache=$RCAC_SCRATCH/cryosparc_hpc/cryosparc_cache
+
+cryosparc_image=/apps/biocontainers/images/cryosparc_3.3.2.sif
+
+
+## Bind host directories
+export SINGULARITY_BINDPATH=$home_licence:/cryosparc_license,$scratch_run:/cryosparc/cryosparc_master/run,$scratch_database:/cryosparc_database,$scratch_cache:/cryosparc_cache
+
+## remove_workers
+singularity exec $cryosparc_image cryosparcm cli "remove_scheduler_target_node(\"$HOSTNAME\")"
+sleep 5
+
+## shutdown_master
+singularity exec $cryosparc_image cryosparcm stop
+
+## clean up
+### remove lock file in /tmp
+if ls /tmp/cryosparc-*sock 1> /dev/null 2>&1; then
+        lockfiles=`ls /tmp/cryosparc-*sock`
+        if [[ $lockfiles != *"cannot access"* ]];then
+                for i in $lockfiles
+                do
+                        owner=`stat -c %U $i`
+                        if [[ $owner == $USER ]]
+                        then
+                                echo "  Removing file $i"
+                                rm $i
+                                rm /tmp/mongodb*sock
+                        else
+                                echo "  There is a $i lockfile left by $owner from a previous session. "
+                                echo "  CryoSparc cannot obtain the database socket because this file can not be delete by you. "
+                                echo "  Please ask $owner to delete $i on $master_node ."
+                                echo "  Unfortunately, I have to quit."
+                                exit 1
+                        fi
+                done
+        fi
+else
+        echo "  No lock founded. "
+fi
+
+### Remove lock files in $scratch_database
+if ls $scratch_database/*.lock 1> /dev/null 2>&1; then
+        lockfiles=`ls $scratch_database/*.lock`
+        if [[ $lockfiles != *"cannot access"* ]];then
+                for i in $lockfiles
+                do
+                        echo "  Removing file $i"
+                                rm $i
+                done
+        fi
+else
+        echo "  No lock founded in $scratch_database. "
+fi

@@ -1,0 +1,9 @@
+---
+name: CryoSPARC 
+category: Interactive Apps 
+subcategory: Cryo-EM Apps
+role: batch_connect
+description: |
+  This app will launch CryoSPARC on the [Anvil cluster]. 
+
+  [Anvil cluster]: https://www.rcac.purdue.edu/compute/anvil/
